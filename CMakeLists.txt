@@ -71,12 +71,18 @@ set(OpenCV_DIR "C:/tools/opencv/build" CACHE PATH "Path to OpenCV build director
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui videoio imgcodecs)
 
 
-add_executable(${PROJECT_NAME} src/main.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp src/Application.cpp)
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/resources"
+        "$<TARGET_FILE_DIR:${PROJECT_NAME}>/resources")
 
 
 target_include_directories(${PROJECT_NAME} PRIVATE
+        include
         ${SFML_INCLUDE_DIR}
-
+        ${imgui_SOURCE_DIR}
+        ${ImGui-SFML_SOURCE_DIR}
         ${OpenCV_INCLUDE_DIRS}
 )
 
