@@ -1,4 +1,4 @@
-# Image-Stegano: Advanced Steganography in Images and Video
+# Image-Stegano: Advanced Steganography in Images
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![C++ version](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://isocpp.org/)
