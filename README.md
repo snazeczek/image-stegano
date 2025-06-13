@@ -72,7 +72,7 @@ This project was built using the following technologies:
 
 **To hide a message:**
 1.  Launch the application.
-2.  Select the "Hide Data" option.
+2.  Select the "Encrypt Image" option.
 3.  Choose the image in which you want to hide the message.
 4.  Enter or load the message/file you want to hide.
 5.  Provide a password to encrypt the data.
@@ -80,7 +80,7 @@ This project was built using the following technologies:
 
 **To reveal a message:**
 1.  Launch the application.
-2.  Select the "Reveal Data" option.
+2.  Select the "Decrypt Image" option.
 3.  Choose the image from which you want to read the message.
 4.  Enter the password used during the hiding process.
 5.  The application will display the hidden message.
