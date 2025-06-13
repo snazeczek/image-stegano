@@ -1,31 +1,11 @@
 #include "Application.hpp"
+#include "../include/MainMenuState.hpp"
 #include <imgui-SFML.h>
-#include <opencv2/opencv.hpp>
 #include <iostream>
 
-#define NOMINMAX
-#include <windows.h>
-
-std::string openFileDialog(HWND owner) {
-    OPENFILENAMEA ofn;
-    CHAR szFile[MAX_PATH] = { 0 };
-    ZeroMemory(&ofn, sizeof(OPENFILENAME));
-    ofn.lStructSize = sizeof(OPENFILENAME);
-    ofn.hwndOwner = owner;
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "Image Files\0*.png;*.jpg;*.jpeg;*.bmp\0All Files\0*.*\0\0";
-    ofn.nFilterIndex = 1;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-    if (GetOpenFileNameA(&ofn) == TRUE) {
-        return ofn.lpstrFile;
-    }
-    return std::string();
-}
-
-
 Application::Application()
-    : m_window(sf::VideoMode({400, 600}), "Project Cerberus", sf::Style::None)
+    : m_window(sf::VideoMode({400, 600}), "Project Cerberus", sf::Style::None),
+      m_isDraggingWindow(false)
 {
     m_window.setFramerateLimit(60);
     if (!ImGui::SFML::Init(m_window, false)) {
@@ -35,24 +15,39 @@ Application::Application()
     setupFonts();
     setupStyle();
 
+    m_currentState = std::make_unique<MainMenuState>(*this);
+
     sf::VideoMode desktop = sf::VideoMode::getDesktopMode();
     m_window.setPosition({(int)(desktop.width - m_window.getSize().x) / 2,
                           (int)(desktop.height - m_window.getSize().y) / 2});
 }
 
+Application::~Application() {
+    ImGui::SFML::Shutdown();
+}
+
 void Application::run() {
     while (m_window.isOpen()) {
+        if (m_wantsToChangeState) {
+            m_currentState = std::move(m_nextState);
+            m_wantsToChangeState = false;
+
+            ImGui::GetIO().ClearInputKeys();
+        }
+
         processEvents();
         update(m_deltaClock.restart());
         render();
     }
-    ImGui::SFML::Shutdown();
 }
 
 void Application::processEvents() {
-    sf::Event event;
+    sf::Event event{};
     while (m_window.pollEvent(event)) {
         ImGui::SFML::ProcessEvent(m_window, event);
+        if (m_currentState) {
+            m_currentState->handleEvents(event);
+        }
         if (event.type == sf::Event::Closed) {
             m_window.close();
         }
@@ -61,118 +56,101 @@ void Application::processEvents() {
 
 void Application::update(sf::Time dt) {
     ImGui::SFML::Update(m_window, dt);
+
+    if (m_currentState) {
+        m_currentState->update(dt);
+    }
 }
 
 void Application::render() {
-    m_window.clear(sf::Color(30, 30, 50, 200));
-    drawUi();
+    m_window.clear(sf::Color(30, 30, 50));
+
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize((sf::Vector2f)m_window.getSize());
+
+    ImGui::Begin("MainCanvas", nullptr, window_flags);
+
+    handleWindowDragging();
+
+    if (m_currentState) {
+        m_currentState->draw(m_window);
+    }
+    drawGlobalUi();
+    ImGui::End();
+
     ImGui::SFML::Render(m_window);
     m_window.display();
 }
 
-void Application::drawUi() {
-    ImGuiWindowFlags window_flags = 0;
-    window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+void Application::changeState(std::unique_ptr<AppState> newState) {
+    if (newState) {
+        m_nextState = std::move(newState);
+        m_wantsToChangeState = true;
+    }
+}
+sf::RenderWindow& Application::getWindow() {
+    return m_window;
+}
 
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
+ImFont* Application::getTitleFont() {
+    return m_titleFont;
+}
 
-    ImGui::Begin("MainCanvas", NULL, window_flags);
+void Application::drawGlobalUi() {
+    const float buttonWidth = 30.0f;
+    const float buttonHeight = 20.0f;
+    const float margin = 20.0f;
 
-    handleWindowDragging();
-
-    const char* titleText = "video-image-stegano";
-    if (m_titleFont) ImGui::PushFont(m_titleFont);
-    float titleWidth = ImGui::CalcTextSize(titleText).x;
-    ImGui::SetCursorPosX((ImGui::GetWindowSize().x - titleWidth) * 0.5f);
+    ImGui::SetCursorPosX(ImGui::GetWindowSize().x - buttonWidth- 18.0f);
     ImGui::SetCursorPosY(20.0f);
-    ImGui::Text(titleText);
-    if (m_titleFont) ImGui::PopFont();
 
-    ImGui::SameLine(ImGui::GetWindowWidth() - 50.0f);
-    ImGui::SetCursorPosY(20.0f);
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.1f, 0.1f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
-    if (ImGui::Button("X", ImVec2(30, 20))) {
+
+    if (ImGui::Button("X", {buttonWidth, buttonHeight})) {
         m_window.close();
     }
+
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
-
-    if (m_imageLoaded) {
-        ImGui::Text("Image Preview:");
-        ImVec2 availableSize = ImGui::GetContentRegionAvail();
-        availableSize.y -= 80.0f;
-        float aspectRatio = (float)m_imageTexture.getSize().y / (float)m_imageTexture.getSize().x;
-        float imageWidth = availableSize.x;
-        float imageHeight = availableSize.x * aspectRatio;
-        if (imageHeight > availableSize.y) {
-            imageHeight = availableSize.y;
-            imageWidth = imageHeight / aspectRatio;
-        }
-        ImGui::Image(m_imageTexture, {imageWidth, imageHeight});
-    }
-
-    const char* buttonText = "Load Image...";
-    ImGuiStyle& style = ImGui::GetStyle();
-    float buttonWidth = ImGui::CalcTextSize(buttonText).x + style.FramePadding.x * 2.0f;
-    float buttonHeight = ImGui::GetFrameHeight();
-    float posX = (ImGui::GetWindowSize().x - buttonWidth) * 0.5f;
-    float posY = ImGui::GetWindowSize().y - buttonHeight - 50.0f;
-    ImGui::SetCursorPos(ImVec2(posX, posY));
-    if (ImGui::Button(buttonText)) {
-        loadSelectedImage();
-    }
-
-    ImGui::End();
-}
-
-void Application::loadSelectedImage() {
-    std::string filePath = openFileDialog(m_window.getSystemHandle());
-    if (!filePath.empty()) {
-        cv::Mat image = cv::imread(filePath);
-        if (!image.empty()) {
-            std::cout << "Loaded image: " << filePath << std::endl;
-            cv::cvtColor(image, image, cv::COLOR_BGR2RGBA);
-            m_imageTexture.create(image.cols, image.rows);
-            m_imageTexture.update(image.ptr());
-            m_imageLoaded = true;
-        } else {
-            std::cerr << "Failed to load image: " << filePath << std::endl;
-            m_imageLoaded = false;
-        }
-    } else {
-        std::cout << "File selection canceled." << std::endl;
-    }
 }
 
 
 void Application::handleWindowDragging() {
-    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        m_isDraggingWindow = true;
-        m_windowStartPos = m_window.getPosition();
-        m_mouseStartPos = sf::Mouse::getPosition();
+    const float titleBarHeight = 60.0f;
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if ( !ImGui::IsAnyItemHovered()) {
+            m_isDraggingWindow = true;
+            m_windowStartPos = m_window.getPosition();
+            m_mouseStartPos = sf::Mouse::getPosition();
+        }
     }
+
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         m_isDraggingWindow = false;
     }
+
     if (m_isDraggingWindow) {
         sf::Vector2i mouseDelta = sf::Mouse::getPosition() - m_mouseStartPos;
         m_window.setPosition(m_windowStartPos + mouseDelta);
     }
 }
 
-
 void Application::setupFonts() {
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->AddFontFromFileTTF("resources/Roboto-Regular.ttf", 16.0f);
+    m_headerFont = io.Fonts->AddFontFromFileTTF("resources/Roboto-Regular.ttf", 17.0f);
+    if (!m_headerFont) {
+        throw std::runtime_error("Failed to load header font");
+    }
     m_titleFont = io.Fonts->AddFontFromFileTTF("resources/Roboto-Regular.ttf", 24.0f);
     if (!ImGui::SFML::UpdateFontTexture()) {
-        std::cerr << "Failed to update font texture" << std::endl;
+        throw std::runtime_error("Failed to update font texture");
     }
 }
 
@@ -194,4 +172,7 @@ void Application::setupStyle() {
     style.GrabRounding = 4.0f;
     style.WindowPadding = ImVec2(10.0f, 10.0f);
     style.FramePadding = ImVec2(8.0f, 6.0f);
+}
+ImFont* Application::getHeaderFont() {
+    return m_headerFont;
 }
